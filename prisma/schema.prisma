@@ -1,0 +1,762 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  firstName    String   @map("first_name")
+  lastName     String?  @map("last_name")
+  phoneNumber  String   @unique @map("phone_number")
+  email        String?  @unique
+  role         UserRole
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  coupons      Coupon[]
+  quotations   Quotation[] @relation("CreatedByUser")
+  updatedQuotations Quotation[] @relation("UpdatedByUser")
+
+  @@map("users")
+}
+
+model NbfcCompany {
+  id              String   @id @default(uuid())
+  companyName     String   @unique @map("company_name")
+  email           String   @unique
+  phoneNumber     String   @unique @map("phone_number")
+  gstNumber       String   @unique @map("gst_number")
+  rateOfInterest  Decimal? @map("rate_of_interest") @db.Decimal(5, 2)
+  buildingNumber  String   @map("building_number")
+  streetDetails   String   @map("street_details")
+  area            String
+  landmark        String?
+  city            String
+  pinCode         String   @map("pin_code")
+  state           String
+
+  nbfcUsers       NbfcUser[]
+
+  @@map("nbfc_companies")
+}
+
+model NbfcUser {
+  id                String      @id @default(uuid())
+  firstName         String      @map("first_name")
+  lastName          String?     @map("last_name")
+  phoneNumber       String      @unique @map("phone_number")
+  email             String      @unique
+  nbfcCompanyId     String      @map("nbfc_company_id")
+  role              NbfcUserRole
+  isActive          Boolean     @default(true) @map("is_active")
+  isCreatedByDygus  Boolean     @default(false) @map("is_created_by_dygus")
+
+  nbfcCompany       NbfcCompany @relation(fields: [nbfcCompanyId], references: [id], onDelete: Cascade)
+  locApprovals      LocApproval[]
+
+  @@map("nbfc_users")
+}
+
+model SectorCategoryImage {
+  id    String @id @default(uuid())
+  url   String @unique
+
+  sectors     Sector[]
+  categories  Category[]
+  subCategories SubCategory[]
+  brands      Brand[]
+
+  @@map("sector_category_images")
+}
+
+model Sector {
+  id      String @id @default(uuid())
+  name    String @unique
+  imageId String? @unique @map("image_id")
+
+  image       SectorCategoryImage? @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  categories  Category[]
+
+  @@map("sectors")
+}
+
+model Category {
+  id          String @id @default(uuid())
+  name        String @unique
+  sectorId    String? @map("sector_id")
+  imageId     String? @map("image_id")
+  description String?
+
+  sector      Sector? @relation(fields: [sectorId], references: [id], onDelete: Cascade)
+  image       SectorCategoryImage? @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  subCategories SubCategory[]
+  products    Product[]
+
+  @@map("categories")
+}
+
+model SubCategory {
+  id          String @id @default(uuid())
+  name        String @unique
+  description String? @db.Text
+  categoryId  String @map("category_id")
+  imageId     String? @unique @map("image_id")
+
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  image       SectorCategoryImage? @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  brands      Brand[]
+  products    Product[]
+
+  @@map("sub_categories")
+}
+
+model HsnCode {
+  id      String @id @default(uuid())
+  hsnCode String @unique @map("hsn_code")
+  cgst    Decimal @default(0.00) @db.Decimal(10, 2)
+  sgst    Decimal @default(0.00) @db.Decimal(10, 2)
+
+  products           Product[]
+  quotationItems     QuotationItem[]
+  calculateGsts      CalculateGst[]
+
+  @@map("hsn_codes")
+}
+
+model Brand {
+  id            String @id @default(uuid())
+  name          String @unique
+  subCategoryId String @map("sub_category_id")
+  imageId       String? @map("image_id")
+
+  subCategory   SubCategory @relation(fields: [subCategoryId], references: [id])
+  image         SectorCategoryImage? @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  products      Product[]
+
+  @@map("brands")
+}
+
+model Product {
+  id            String @id @default(uuid())
+  name          String @unique
+  variationName ProductVariation? @map("variation_name")
+  categoryId    String? @map("category_id")
+  subCategoryId String? @map("sub_category_id")
+  hsnCodeId     String @map("hsn_code_id")
+  unit          String?
+  brandId       String? @map("brand_id")
+  description   String?
+  deletedAt     DateTime? @map("deleted_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  category      Category? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  subCategory   SubCategory? @relation(fields: [subCategoryId], references: [id], onDelete: Restrict)
+  hsnCode       HsnCode @relation(fields: [hsnCodeId], references: [id], onDelete: SetNull)
+  brand         Brand? @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  inventories   Inventory[]
+  productImages ProductImage[]
+
+  @@unique([name, subCategoryId, brandId], name: "unique_name_sub_category_brand")
+  @@map("products")
+}
+
+model Inventory {
+  id             String  @id @default(uuid())
+  productId      String  @map("product_id")
+  variationValue String? @map("variation_value")
+  skuId          String? @unique @map("sku_id")
+  price          Decimal @db.Decimal(10, 2)
+  stock          Int
+  description    String? @db.Text
+  discount       Decimal? @default(0) @db.Decimal(5, 2)
+
+  product        Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  carts          Cart[]
+
+  @@unique([productId, variationValue], name: "unique_product_id_variation_value")
+  @@map("inventories")
+}
+
+model ProductImage {
+  id        String @id @default(uuid())
+  url       String @unique
+  productId String @map("product_id")
+
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_images")
+}
+
+model Customer {
+  id                        String @id @default(uuid())
+  firstName                 String @map("first_name")
+  lastName                  String? @map("last_name")
+  phoneNumber               String @unique @map("phone_number")
+  email                     String @unique
+  directorOrPartnerPanNumber String? @map("director_or_partner_pan_number")
+  secondaryPan              String? @map("secondary_pan")
+  role                      CustomerRole @default(customer)
+  isActive                  Boolean @default(true) @map("is_active")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  businessDetails           BusinessDetail[]
+  addresses                 Address[]
+  bankDetails               BankDetail?
+  gstDetails                GstDetail?
+  itDetails                 ItDetail?
+  lineOfCreditApplications  LineOfCreditApplication[]
+  coupons                   Coupon[]
+  carts                     Cart[]
+  quotations                Quotation[]
+  profileImages             ProfileImage[]
+
+  @@map("customers")
+}
+
+model OtpLogin {
+  id              String           @id @default(uuid())
+  otp             String           @db.Char(4)
+  isUsed          Boolean          @default(false) @map("is_used")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  expiresAt       DateTime         @map("expires_at")
+  referenceBy     String           @map("reference_by")
+  referenceByType OtpReferenceType @map("reference_by_type")
+
+  // ✅ Relations
+  userId     String?
+  user       User?        @relation(fields: [userId], references: [id])
+
+  customerId String?
+  customer   Customer?    @relation(fields: [customerId], references: [id])
+
+  nbfcUserId String?
+  nbfcUser   NbfcUser?    @relation(fields: [nbfcUserId], references: [id])
+
+  @@map("otp_logins")
+}
+
+
+model BusinessDetail {
+  id                String @id @default(uuid())
+  customerId        String @map("customer_id")
+  name              String
+  businessType      String? @map("business_type")
+  secondaryContact  String? @map("secondary_contact")
+  gstNumber         String? @map("gst_number")
+
+  customer          Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("business_details")
+}
+
+model Address {
+  id           String        @id @default(uuid())
+  customerId   String        @map("customer_id")
+  addressType  AddressType   @map("address_type")
+  buildingNumber String      @map("building_number") @db.VarChar(50)
+  streetDetails String       @map("street_details") @db.VarChar(255)
+  area         String        @db.VarChar(255)
+  landmark     String?       @db.VarChar(255)
+  city         String        @db.VarChar(100)
+  pinCode      String        @map("pin_code") @db.VarChar(20)
+  state        String        @db.VarChar(100)
+  contactName  String        @map("contact_name") @db.VarChar(100)
+  contactEmail String?       @map("contact_email") @db.VarChar(255)
+  contactPhone String        @map("contact_phone") @db.VarChar(20)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  quotations   Quotation[]
+
+  @@map("addresses")
+}
+
+model BankDetail {
+  id            String @id @default(uuid())
+  customerId    String @unique @map("customer_id")
+  name          String?
+  accountNumber String @unique @map("account_number")
+  ifscCode      String @map("ifsc_code")
+  isPrimary     Boolean @default(true) @map("is_primary")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  lineOfCreditApplications LineOfCreditApplication[]
+
+  @@map("bank_details")
+}
+
+model GstDetail {
+  id                    String   @id @default(uuid())
+  customerId            String   @unique @map("customer_id")
+  gstin                 String   @unique
+  legalName             String   @map("legal_name")
+  tradeName             String   @map("trade_name")
+  gstFilingStatus       String   @map("gst_filing_status")
+  dateOfGstRegistration DateTime @map("date_of_gst_registration")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  customer              Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  lineOfCreditApplications LineOfCreditApplication[]
+
+  @@map("gst_details")
+}
+
+model ItDetail {
+  id                  String   @id @default(uuid())
+  customerId          String   @unique @map("customer_id")
+  taxpayerName        String   @map("taxpayer_name")
+  pan                 String   @unique
+  tan                 String
+  dateOfRegistration  DateTime @map("date_of_registration")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  customer            Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  lineOfCreditApplications LineOfCreditApplication[]
+
+  @@map("it_details")
+}
+
+model LineOfCreditApplication {
+  id                           String @id @default(uuid())
+  customerId                   String @map("customer_id")
+  bankId                       String @map("bank_id")
+  itId                         String @map("it_id")
+  gstId                        String @map("gst_id")
+  requestedLineOfCreditAmount  String? @map("requested_line_of_credit_amount")
+  declaration                  String? @db.Text
+  isAgreedOrNot                Boolean @default(true) @map("is_agreed_or_not")
+  createdAt                    DateTime @default(now()) @map("created_at")
+  updatedAt                    DateTime @updatedAt @map("updated_at")
+
+  customer                     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  bank                         BankDetail @relation(fields: [bankId], references: [id], onDelete: Cascade)
+  it                           ItDetail @relation(fields: [itId], references: [id], onDelete: Cascade)
+  gst                          GstDetail @relation(fields: [gstId], references: [id], onDelete: Cascade)
+  locApprovals                 LocApproval[]
+
+  @@map("line_of_credit_applications")
+}
+
+model LocApproval {
+  id                      String              @id @default(uuid())
+  locId                   String              @map("loc_id")
+  status                  LocApprovalStatus
+  approvedLimit           Decimal             @default(0) @map("approved_limit") @db.Decimal(15, 2)
+  rejectionReason         String?             @db.Text @map("rejection_reason")
+  approvedBy              String              @map("approved_by")
+  numberOfInterest        Int?                @map("number_of_interest")
+  statusUpdatedAt         DateTime            @map("status_updated_at")
+  availableLimit          Decimal             @default(0) @map("available_limit") @db.Decimal(15, 2)
+  customerApprovedStatus  CustomerApprovalStatus @default(pending) @map("customer_approved_status")
+  isBlocked               Boolean             @default(false) @map("is_blocked")
+
+  lineOfCreditApplication LineOfCreditApplication @relation(fields: [locId], references: [id], onDelete: Cascade)
+  approver                NbfcUser @relation(fields: [approvedBy], references: [id], onDelete: Restrict)
+  creditReimbursements    CreditReimbursement[]
+
+  @@map("loc_approvals")
+}
+
+model CreditReimbursement {
+  id                    String @id @default(uuid())
+  locApprovalId         String @map("loc_approval_id")
+  paymentAmount         Decimal @map("payment_amount") @db.Decimal(15, 2)
+  paymentDate           DateTime @map("payment_date") @db.Date
+  reimbursementAmount   Decimal @map("reimbursement_amount") @db.Decimal(15, 2)
+  isVerified            Boolean? @default(false) @map("is_verified")
+
+  locApproval           LocApproval @relation(fields: [locApprovalId], references: [id], onDelete: Cascade)
+
+  @@map("credit_reimbursements")
+}
+
+model CustomerDocument {
+  id           String              @id @default(uuid())
+  referenceId  String              @map("reference_id")
+  referenceType CustomerDocumentType @map("reference_type")
+  fileUrl      String              @unique @map("file_url")
+
+  @@map("customer_documents")
+}
+
+model Coupon {
+  id          String   @id @default(uuid())
+  createdBy   String   @map("created_by")
+  customerId  String   @map("customer_id")
+  couponCode  String   @unique @map("coupon_code")
+  discount    Decimal  @db.Decimal(10, 2)
+  imageUrl    String?  @map("image_url")
+  startDate   DateTime @map("start_date")
+  endDate     DateTime @map("end_date")
+  isActive    Boolean  @default(true) @map("is_active")
+  isApplied   Boolean  @default(false) @map("is_applied")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  creator     User @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  quotations  Quotation[]
+
+  @@map("coupons")
+}
+
+model Cart {
+  id                String @id @default(uuid())
+  customerId        String @map("customer_id")
+  inventoryId       String @map("inventory_id")
+  quantity          Int
+  quotationApplied  Boolean @default(false) @map("quotation_applied")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  customer          Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  inventory         Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  quotationItems    QuotationItem[]
+
+  @@map("carts")
+}
+
+model Quotation {
+  id                    String              @id @default(uuid())
+  quotationNumber       String              @unique @map("quotation_number")
+  customerId            String              @map("customer_id")
+  couponDiscount        Decimal?            @map("coupon_discount") @db.Decimal(10, 2)
+  couponId              String?             @map("coupon_id")
+  totalAmount           Decimal             @map("total_amount") @db.Decimal(10, 2)
+  cgstAmount            Decimal             @default(0.00) @map("cgst_amount") @db.Decimal(10, 2)
+  sgstAmount            Decimal             @default(0.00) @map("sgst_amount") @db.Decimal(10, 2)
+  totalAmountWithGst    Decimal             @map("total_amount_with_gst") @db.Decimal(10, 2)
+  totalDiscountedAmount Decimal?            @map("total_discounted_amount") @db.Decimal(10, 2)
+  status                QuotationStatus     @default(pending)
+  rejectionReason       String?             @db.Text @map("rejection_reason")
+  createdBy             String              @map("created_by")
+  createdByType         QuotationCreatorType @map("created_by_type")
+  addressId             String              @map("address_id")
+  updatedBy             String?             @map("updated_by")
+  updatedByType         QuotationCreatorType? @map("updated_by_type")
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+
+  customer              Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  coupon                Coupon? @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  address               Address @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  creator               User @relation("CreatedByUser", fields: [createdBy], references: [id], onDelete: SetNull)
+  updater               User? @relation("UpdatedByUser", fields: [updatedBy], references: [id], onDelete: SetNull)
+  quotationItems        QuotationItem[]
+  calculateGsts         CalculateGst[]
+  payments              Payment[]
+
+  @@map("quotations")
+}
+
+model QuotationItem {
+  id                    String  @id @default(uuid())
+  cartId                String? @map("cart_id")
+  quotationId           String  @map("quotation_id")
+  productName           String  @map("product_name")
+  hsnCode               String  @map("hsn_code")
+  hsnCodeId             String? @map("hsn_code_id")
+  unit                  String?
+  quantity              Int
+  rate                  Decimal @db.Decimal(10, 2)
+  discount              Decimal? @db.Decimal(10, 2)
+  totalAmount           Decimal @map("total_amount") @db.Decimal(10, 2)
+  discountedAmt         Decimal? @map("discounted_amt") @db.Decimal(10, 2)
+  discountedTotalAmount Decimal? @map("discounted_total_amount") @db.Decimal(10, 2)
+
+  cart                  Cart? @relation(fields: [cartId], references: [id], onDelete: SetNull)
+  quotation             Quotation @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  hsnCodeRef            HsnCode? @relation(fields: [hsnCodeId], references: [id], onDelete: SetNull)
+
+  @@map("quotations_items")
+}
+
+model CalculateGst {
+  id          String @id @default(uuid())
+  hsnCodeId   String @map("hsn_code_id")
+  totalAmount Decimal @map("total_amount") @db.Decimal(10, 2)
+  cgstTotal   Decimal @map("cgst_total") @db.Decimal(10, 2)
+  sgstTotal   Decimal @map("sgst_total") @db.Decimal(10, 2)
+  taxAmount   Decimal @map("tax_amount") @db.Decimal(10, 2)
+  quotationId String @map("quotation_id")
+
+  hsnCode     HsnCode @relation(fields: [hsnCodeId], references: [id], onDelete: SetNull)
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+
+  @@map("calculate_gsts")
+}
+
+model Payment {
+  id          String        @id @default(uuid())
+  quotationId String?       @map("quotation_id")
+  paymentType PaymentType   @map("payment_type")
+  status      PaymentStatus @default(pending)
+  amount      Decimal       @db.Decimal(10, 2)
+  description String?       @db.Text
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  quotation       Quotation? @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  offlinePayment  OfflinePayment?
+  onlinePayment   OnlinePayment?
+  creditPayment   CreditPayment?
+  orders          Order[]
+
+  @@map("payments")
+}
+
+model OfflinePayment {
+  id                   String              @id @default(uuid())
+  paymentId            String              @unique @map("payment_id")
+  fileUrl              String              @map("file_url")
+  offlinePaymentType   OfflinePaymentType  @default(upi) @map("offline_payment_type")
+
+  payment              Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@map("offline_payments")
+}
+
+model OnlinePayment {
+  id            String   @id @default(uuid())
+  paymentId     String   @unique @map("payment_id")
+  currency      String
+  paymentMethod String   @map("payment_method")
+  transactionId String   @map("transaction_id")
+  orderId       String   @map("order_id")
+  signatureId   String   @map("signature_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  payment       Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@map("online_payments")
+}
+
+model CreditPayment {
+  id              String   @id @default(uuid())
+  paymentId       String   @unique @map("payment_id")
+  userId          String   @map("user_id")
+  usedCredit      Decimal  @map("used_credit") @db.Decimal(10, 2)
+  remainingCredit Decimal  @map("remaining_credit") @db.Decimal(10, 2)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  payment         Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@map("credit_payments")
+}
+
+model Order {
+  id          String      @id @default(uuid())
+  paymentId   String      @map("payment_id")
+  orderStatus OrderStatus @map("order_status")
+  orderNumber String      @unique @map("order_number")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  payment         Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  shipmentModes   ShipmentMode[]
+  articles        Article[]
+  ewayBills       EwayBill[]
+
+  @@map("orders")
+}
+
+model ShipmentMode {
+  id       String        @id @default(uuid())
+  orderId  String        @map("order_id")
+  modeName ShipmentModeType @map("mode_name")
+
+  order    Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  transportDetails TransportDetail[]
+  travelAgencies   TravelAgency[]
+
+  @@map("shipment_modes")
+}
+
+model TransportDetail {
+  id           String @id @default(uuid())
+  modeId       String @map("mode_id")
+  vehicleNumber String @map("vehicle_number")
+  driverNumber String @map("driver_number")
+
+  mode         ShipmentMode @relation(fields: [modeId], references: [id], onDelete: Cascade)
+
+  @@map("transport_details")
+}
+
+model TravelAgency {
+  id         String @id @default(uuid())
+  modeId     String @map("mode_id")
+  agencyName String @map("agency_name")
+  lrNumber   String? @map("lr_number")
+
+  mode       ShipmentMode @relation(fields: [modeId], references: [id], onDelete: Cascade)
+
+  @@map("travel_agencies")
+}
+
+model Article {
+  id        String @id @default(uuid())
+  orderId   String @map("order_id")
+  imageUrl  String @map("image_url")
+  numbers   Int
+
+  order     Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("articles")
+}
+
+model EwayBill {
+  id              String   @id @default(uuid())
+  orderId         String   @map("order_id")
+  ewayBill        String   @map("eway_bill")
+  ackNo           String?  @map("ack_no")
+  ackDt           DateTime? @map("ack_dt")
+  irn             String?  @map("irn")
+  signedInvoice   String?  @map("signed_invoice") @db.Text
+  signedQrCode    String?  @map("signed_qr_code") @db.Text
+  status          String?
+  ewbNo           String?  @map("ewb_no")
+  ewbDt           DateTime? @map("ewb_dt")
+  ewbValidTill    DateTime? @map("ewb_valid_till")
+  eInvoiceDoc     String?  @map("e_invoice_doc")
+
+  order           Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("eway_bills")
+}
+
+model EwayBillAuthToken {
+  id         String   @id @default(uuid())
+  authToken  String   @map("auth_token")
+  tokenExpiry DateTime @map("token_expiry") @default(now())
+
+  @@map("eway_bill_auth_tokens")
+}
+
+model ProfileImage {
+  id         String @id @default(uuid())
+  customerId String @map("customer_id")
+  imageUrl   String? @map("image_url")
+
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("profile_images")
+}
+
+// Enums
+enum UserRole {
+  super_admin
+  admin
+  account
+  dispatch
+  support
+}
+
+enum NbfcUserRole {
+  super_admin
+  admin
+  user
+}
+
+enum CustomerRole {
+  customer
+}
+
+enum OtpReferenceType {
+  user
+  customer
+  nbfc
+}
+
+enum AddressType {
+  billing_address
+  shipping_address
+  billing_same_as_shipping
+}
+
+enum CustomerDocumentType {
+  bank
+  it
+  gst
+  loc
+}
+
+enum QuotationStatus {
+  pending
+  accepted
+  rejected
+  admin_approved
+}
+
+enum QuotationCreatorType {
+  user
+  customer
+}
+
+enum LocApprovalStatus {
+  approved
+  rejected
+}
+
+enum CustomerApprovalStatus {
+  pending
+  approved
+  rejected
+}
+
+enum PaymentType {
+  online
+  offline
+  line_of_credit
+}
+
+enum PaymentStatus {
+  pending
+  completed
+  failed
+  rejected
+}
+
+enum OfflinePaymentType {
+  bank_payment
+  upi
+}
+
+enum OrderStatus {
+  order_not_confirmed
+  order_confirmed
+  processing
+  packed
+  generate_invoice
+  generated_invoice
+  out_for_delivery
+  delivered
+  cancelled_order
+}
+
+enum ShipmentModeType {
+  bus_agency
+  porter
+  own_transport
+}
+
+enum ProductVariation {
+  diameter
+  volume
+  length
+  grade
+}

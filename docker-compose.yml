@@ -1,0 +1,97 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: dygus-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dygus_db
+      POSTGRES_USER: dygus_user
+      POSTGRES_PASSWORD: dygus_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - dygus-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dygus_user -d dygus_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: dygus-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - dygus-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dygus-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://dygus_user:dygus_password@postgres:5432/dygus_db?schema=public
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+    networks:
+      - dygus-network
+    command: npx nest start --watch
+
+  # Prisma Studio (optional - for database management)
+  prisma-studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dygus-prisma-studio
+    restart: unless-stopped
+    ports:
+      - "5555:5555"
+    environment:
+      DATABASE_URL: postgresql://dygus_user:dygus_password@postgres:5432/dygus_db?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+    networks:
+      - dygus-network
+    command: npx prisma studio --hostname 0.0.0.0 --port 5555
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  dygus-network:
+    driver: bridge
